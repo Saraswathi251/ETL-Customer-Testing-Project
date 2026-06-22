@@ -65,49 +65,80 @@ VALUES
 ('CUST049','Levi Bell','levi.b@gmail.com','Perth','Australia','2024-04-24'),
 ('CUST050','Nora Murphy','nora.m@gmail.com','Brisbane','Australia','2024-04-26');
 
-select *from mini.customer_source;
-SELECT *
-INTO OUTFILE '/tmp/customer_source.csv'
-FIELDS TERMINATED BY ','
-ENCLOSED BY '"'
-LINES TERMINATED BY '\n'
-FROM customer_source;
-
-#transformation logic
+-- snowflake target table
+CREATE TABLE customer_target1( customer_id VARCHAR(50), 
+customer_name VARCHAR(40),
+ email_id VARCHAR(40),
+ city VARCHAR(40),
+ country VARCHAR(40), 
+ registration_date DATE );
+ 
+ -- Transformation Logic
+INSERT INTO customer_target
 SELECT
 customer_id,
-UPPER(customer_name) AS customer_name,
-IFNULL(TRIM(email_id),'NA') AS email_address,
+customer_name,
+LOWER(email_id) AS email_id,
 city,
-country,
+UPPER(country) AS country,
 registration_date
 FROM customer_source;
 
-insert into ecom_tar.order_target
-(order_id,customer_id,amount,order_status,order_date,loaded_date)
-select
-order_id, 
-customer_id,
-case 
--- when amount<0 then "Negative amount"
-when amount is null then "unknown"
-else amount
-END as amount,
-order_status,
-case
- when order_date is null  then curdate()
-    else order_date
-end as order_date,
-now()
-from ecom_src.order_src
-where order_status = "pending";
+-- ETL Validation queries
+-- Record count validation
+-- source
+SELECT COUNT(*) AS source_count FROM customer_source;
+-- target
+SELECT COUNT(*) AS target_count FROM customer_target;
+select *from customer_target;
+select *from customer_source;
+-- null validation
+SELECT * FROM customer_target WHERE customer_name IS NULL;
+-- Duplicate validation
+SELECT customer_id, COUNT(*) FROM customer_target GROUP BY customer_id HAVING COUNT(*) > 1;
 
+-- Email Transformation Validation
+SELECT *
+FROM customer_target
+WHERE email_address<> lower(email_address);
+-- Country Transformation Validation
+SELECT *
+FROM customer_target
+WHERE country <> UPPER(country);
+-- Registration Date Validation
+SELECT *
+FROM customer_target
+WHERE registration_date IS NULL;
+--  Source to Target Data Comparison
+SELECT s.customer_id
+FROM customer_source s
+LEFT JOIN customer_target t
+ON s.customer_id = t.customer_id
+WHERE t.customer_id IS NULL;
+-- Aggregate Validation
+SELECT country,
+COUNT(*) AS total_customers
+FROM customer_source
+GROUP BY country;
+SELECT country,
+COUNT(*) AS total_customers
+FROM customer_target
+GROUP BY country;
 
-CREATE TABLE CUSTOMER_TARGET (
-    CUSTOMER_ID VARCHAR(50),
-    CUSTOMER_NAME VARCHAR(40),
-    EMAIL_ADDRESS VARCHAR(40),
-    CITY VARCHAR(40),
-    COUNTRY VARCHAR(40),
-    REGISTRATION_DATE DATE
-);
+-- Customer ID Validation
+SELECT customer_id,
+COUNT(*)
+FROM customer_target
+GROUP BY customer_id
+HAVING COUNT(*) > 1;
+
+-- Data Validation
+SELECT COUNT(*)
+FROM customer_source s
+INNER JOIN customer_target t
+ON s.customer_id=t.customer_id
+AND s.customer_name=t.customer_name
+AND LOWER(s.email_id)=t.email_address
+AND s.city=t.city
+AND UPPER(s.country)=t.country
+AND s.registration_date=t.registration_date;
